@@ -1,0 +1,459 @@
+---
+title: "Exploratory Data Analysis"
+author: "Ahsan Ahmad"
+date: "2024-02-17"
+output: 
+  html_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = F, warning = F)
+
+```
+
+## Introduction
+
+Home Credit faces the challenge of accurately predicting the loan repayment capabilities of a specific group with non-existent or limited credit history, which poses the risk of rejecting clients capable of repayment. The objective of this notebook is to do Exploratory  Data Analysis using the dataset provided by Home Credit to accurately predict whether a customer will have payment difficulties (i.e. TARGET = 1) or not. The  purpose of this EDA notebook is to thoroughly examine and understand the characteristics of a dataset before applying proper modeling or analysis techniques. This notebook is created after doing a reiterative process of evaluating data and only the final results are published that answer the following questions in the data story:
+
+1. What are the distributions of the important variables in the dataset?
+2. What are the basic summary statistics (mean, median, standard deviation, etc.) for each important predictor?
+3. How to select a few most important and relevant predictors from the dataset?
+4. Are there any missing values in the dataset? What method is used to clean the Data and remove them?
+5. What are the relationships between different variables in the dataset? Are there any strong correlations that suggests potential predictive relationships?
+6. How can the data be visualized to better understand its characteristics? e.g. creating different plots using ggplot like histograms, scatter plots, box plots, heatmaps etc.
+
+## Description of the data
+
+Initially a data set of 307,511 observations has been given by Home Credit which contains one identifier column, one target variable named "TARGET" which has a value of 1 when client has payment difficulties and 0 in all other cases, and 120 predictor variables. In this section we will produce summary statistics of the whole data and try to create insights from it. 
+
+```{r}
+# Load Data and packages
+library(tidyverse) #load libraries for project
+library(dplyr) 
+library(ggplot2)
+library(tidyr)
+library(rpart)
+library(rpart.plot)
+library(skimr)
+library(janitor)
+library(corrplot)
+
+data <- read.csv("application_train.csv")
+
+# Checking the data to look for Length, Min, Max, Mean, Outliers etc
+
+summary(data)
+
+# Accuracy of the model with majority classifier
+
+data %>% 
+  summarise(mean_target = mean(TARGET),
+            n = n())
+
+```
+
+As seen from the mean_target variable only 8.07% of the customers had payment difficulties making TARGET = 0 as the majority classifier, therefore if we create a model with always predicting TARGET = 0 that model will have an accuracy of 91.93%. Hence, any model that we create now is beneficial for us if it's accuracy is more than 91.93%.
+
+From looking at the data it can be noted that the 'NA' values for the columns APARTMENTS_AVG to EMERGENCYSTATE_MODE is due to the fact that customer lives in a house and not in a building/apartment hence these columns don't apply to them.
+
+## Initial Analysis and selecting most important predictors
+
+```{r}
+
+# Doing Correlation Analysis to find the most important predictors
+
+# Identifying non-numeric columns
+
+data_factor <- data
+non_numeric_columns <- names(data)[sapply(data, function(x) !is.numeric(x))]
+
+# Converting categorical columns to factors
+
+data_factor[non_numeric_columns] <- lapply(data_factor[non_numeric_columns], as.factor)
+
+# Filtering columns with only one level
+
+single_level_columns <- names(data_factor)[sapply(data_factor, is.factor) & sapply(data_factor, function(x) length(levels(x)) == 1)]
+
+# Performing one-hot encoding
+
+data_encoded <- model.matrix(~., data = data_factor)
+any(is.na(data_encoded))
+
+# Calculating correlation coefficients
+
+correlation <- cor(data_encoded[, -c(1, which(names(data_encoded) == "TARGET"))])
+
+# Extracting correlation coefficients for the target variable
+
+target_correlation <- correlation[which(colnames(correlation) == "TARGET"), ]
+
+# Sorting predictors by absolute correlation coefficients
+
+sorted_correlation <- sort(abs(target_correlation), decreasing = TRUE)
+
+# Printing the sorted correlation coefficients
+
+sorted_correlation %>% 
+  head(n = 15)
+
+```
+
+After doing correlation analysis, the top 12 predictors come out to be:
+
+1. EXT_SOURCE_3
+
+2. EXT_SOURCE_2
+
+3. EXT_SOURCE_1
+
+4. REGION_RATING_CLIENT_W_CITY
+
+5. NAME_EDUCATION_TYPE
+
+6. REGION_RATING_CLIENT
+
+7. FLAG_DOCUMENT_3
+
+8. FLOORSMAX_AVG
+
+9. FLOORSMAX_MODE
+
+10. FLOORSMAX_MEDI
+
+11. DAYS_BIRTH
+
+12. AMT_INCOME_TOTAL
+
+
+```{r}
+# Using Multiple Linear Regression to find the most important predictors
+
+# Removing all predictors with even one NA value and saving it to a dataset
+
+without_na_data_factor <-
+  data_factor %>% 
+  select(names(which(colSums(is.na(.)) == 0)))
+
+# Creating a Multiple Linear Regression Model with all the remaining predictors
+model <- lm(TARGET ~ ., data = without_na_data_factor)
+model_summary <- summary(model)
+
+# Creating a Dataframe with Predictor/Variable name and it's corresponding P-Value and arranging it in ascending order to get the top 10 predictors
+p_values <- model_summary$coefficients[, "Pr(>|t|)"]
+coefficients_p_value <- data.frame(
+  Variable_name = rownames(model_summary$coefficients),
+  P_Value = p_values
+)
+coefficients_p_value %>% 
+  arrange(P_Value) %>% 
+  head(n = 10)
+
+```
+
+After doing multiple linear regression, the top 10 predictors with lowest p-value come out to be:
+
+1. CODE_GENDER
+
+2. FLAG_OWN_CAR
+
+3. DAYS_EMPLOYED
+
+4. DAYS_BIRTH
+
+5. DAYS_ID_PUBLISH
+
+6. ORGANIZATION_TYPE
+
+7. FLAG_WORK_PHONE
+
+8. NAME_FAMILY_STATUS
+
+9. OCCUPATION_TYPE
+
+10. FLAG_DOCUMENT_3
+
+## Discussion of Missing Data and Data Cleaning
+
+```{r}
+# Subsetting the data to only include the 20 variables that are considered most important predictors according to the correlation analysis and multiple linear regression.
+
+subset_data <- data_factor[, c("TARGET", "EXT_SOURCE_3", "EXT_SOURCE_2", "EXT_SOURCE_1", "REGION_RATING_CLIENT_W_CITY", "REGION_RATING_CLIENT", "NAME_EDUCATION_TYPE", "FLAG_DOCUMENT_3", "FLOORSMAX_AVG", "FLOORSMAX_MODE", "FLOORSMAX_MEDI", "DAYS_BIRTH", "AMT_INCOME_TOTAL", "CODE_GENDER", "FLAG_OWN_CAR", "DAYS_EMPLOYED", "DAYS_ID_PUBLISH", "ORGANIZATION_TYPE", "FLAG_WORK_PHONE", "NAME_FAMILY_STATUS", "OCCUPATION_TYPE")]
+
+# Display the number of NA values per column
+
+na_count <- colSums(is.na(subset_data))
+print(na_count)
+
+```
+
+Since EXT_SOURCE_3, EXT_SOURCE_2 & EXT_SOURCE_1 are normalized score from external data we can use the mean to replace the missing NA values. Upon data evaluation it can be seen that FLOORSMAX_AVG, FLOORSMAX_MODE & FLOORSMAX_MEDI all three have the same values and hence we can simply remove two from our analysis. 
+
+As mentioned above from looking at the data it can be noted that the 'NA' values for the columns APARTMENTS_AVG to EMERGENCYSTATE_MODE is due to the fact that customer lives in a house and not in a building/apartment hence these columns don't apply to them. Therefore, we can split this dataset into two datasets one for houses and one for apartments. For this EDA notebook we will remove all the NA values for FLOORSMAX_AVG and do an analysis for apartments only at this point.
+
+```{r}
+columns_to_remove <-  c("FLOORSMAX_MODE", "FLOORSMAX_MEDI")
+subset_data <- subset_data[, -which(names(subset_data) %in% columns_to_remove)]
+
+# Replacing NA for EXT_SOURCE with mean values
+
+mean_value_1 <- mean(subset_data$EXT_SOURCE_1, na.rm = TRUE)
+subset_data$EXT_SOURCE_1[is.na(subset_data$EXT_SOURCE_1)] <- mean_value_1
+
+mean_value_2 <- mean(subset_data$EXT_SOURCE_2, na.rm = TRUE)
+subset_data$EXT_SOURCE_2[is.na(subset_data$EXT_SOURCE_2)] <- mean_value_2
+
+mean_value_3 <- mean(subset_data$EXT_SOURCE_3, na.rm = TRUE)
+subset_data$EXT_SOURCE_3[is.na(subset_data$EXT_SOURCE_3)] <- mean_value_3
+
+subset_data <- na.omit(subset_data)
+
+na_count <- colSums(is.na(subset_data))
+print(na_count)
+
+summary(subset_data)
+```
+
+From the summary data we can see some ambiguities with the data for example the max in DAYS_EMPLOYED is 365243 which is not possible because it is supposed to be negative as the number should represent the number of days that customer was employed before getting a loan hence we can replace it with a mean of column without this number. We will also be removing the high outliers from AMT_INCOME_TOTAL and the "XNA" gender values in CODE_GENDER as we only have 3 rows with "XNA".
+
+```{r}
+# Replacing 365243 with the mean value of Days Employed
+
+mean_without_recurring <- mean(subset_data$DAYS_EMPLOYED[subset_data$DAYS_EMPLOYED != 365243])
+subset_data$DAYS_EMPLOYED[subset_data$DAYS_EMPLOYED == 365243] <- mean_without_recurring
+
+# Removing Outliers and the "XNA" gender values in CODE_GENDER as we only have 3 rows with "XNA"
+
+row_max <- which(subset_data$AMT_INCOME_TOTAL == 117000000 |
+                 subset_data$CODE_GENDER == 'XNA' |
+                 subset_data$AMT_INCOME_TOTAL > 2000000)
+subset_data <- subset_data[-row_max, ]
+
+# Changing variables that are binary or ranked into factors along with the TARGET variable
+
+subset_data <- subset_data %>%
+  mutate(TARGET = factor(TARGET),
+         REGION_RATING_CLIENT = factor(REGION_RATING_CLIENT),
+         REGION_RATING_CLIENT_W_CITY = factor(REGION_RATING_CLIENT_W_CITY),
+         FLAG_DOCUMENT_3 = factor(FLAG_DOCUMENT_3),
+         FLAG_WORK_PHONE = factor(FLAG_WORK_PHONE)) 
+
+summary(subset_data)
+
+```
+
+## Exploratory Data Visualizations
+
+Plotting Data for evaluating different relationships between Target and other predictors
+
+```{r}
+
+# Scatter plot between two continuous variable with target as color
+subset_data %>% 
+  ggplot(mapping = aes(x = EXT_SOURCE_3, y = EXT_SOURCE_1, color = TARGET)) +
+  geom_point() +
+  labs(title = "Scatterplot of EXT_SOURCE_3 vs EXT_SOURCE_1 by TARGET")
+
+```
+
+
+It can be seen that as EXT_SOURCE_3 and EXT_SOURCE_1 increase the TARGET has more chances to get a value of 0 showing that they have an inverse relationship with the target variable.
+
+
+```{r}
+
+# Histogram of EXT_SOURCE_2
+subset_data %>% 
+  ggplot(mapping = aes(x = EXT_SOURCE_2, fill = TARGET)) +
+  geom_histogram(position = "identity", alpha = 0.5, bins = 30) +
+  labs(title = "Distribution of EXT_SOURCE_2 by TARGET",
+       x = "EXT_SOURCE_2",
+       y = "Frequency",
+       fill = "TARGET")
+
+```
+
+
+Upon looking at the Histogram, as the EXT_SOURCE_2 increases in value the frequency of 0s in TARGET variable increases suggesting a negative relationship between the predictor and target.
+
+
+```{r}
+
+# Bar Chart between REGION_RATING_CLIENT & REGION_RATING_CLIENT_W_CITY by TARGET
+
+subset_data %>%
+  ggplot(mapping = aes(x = REGION_RATING_CLIENT_W_CITY, fill = TARGET)) +
+  geom_bar(position = "dodge") +
+  facet_wrap(~ REGION_RATING_CLIENT) +
+  labs(title = "Distribution of REGION_RATING_CLIENT and REGION_RATING_CLIENT_W_CITY by TARGET",
+       x = "REGION_RATING_CLIENT_W_CITY",
+       y = "Count",
+       fill = "TARGET")
+
+```
+
+
+As seen from the Bar chart the TARGET has a value of 1 when both the REGION_RATING_CLIENT and REGION_RATING_CLIENT_W_CITY has a value of 2 but more evidence is required to support that TARGET is 1 whenever both the variables are 2. 
+
+
+```{r}
+# Grouped Bar Chart between FLAG_DOCUMENT_3 and TARGET
+
+subset_data %>% 
+  ggplot(mapping = aes(x = FLAG_DOCUMENT_3, fill = TARGET)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Bar Plot of the Frequency of FLAG_DOCUMENT_3 by TARGET",
+       y = "Frequency")
+
+```
+
+
+The above Bar Plot suggests a weak relationship between FLAG_DOCUMENT_3 and TARGET that suggests that when FLAG_DOCUMENT_3 is 1, It is more chance that the TARGET is also 1 as compare to when FLAG_DOCUMENT_3 is 0 but more analysis is required to support this evidence.
+
+
+```{r}
+# Heatmap between NAME_EDUCATION_TYPE and TARGET
+
+subset_data %>%
+  count(NAME_EDUCATION_TYPE, TARGET) %>%
+  ggplot(mapping = aes(x = NAME_EDUCATION_TYPE, y = TARGET)) +
+  geom_tile(mapping = aes(fill = n)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        axis.text.y = element_text(angle = 0)) +
+  labs(title = "Heatmap between NAME_EDUCATION_TYPE and TARGET")
+
+```
+
+
+The above Heatmap suggests that clients that have Higher education or Secondary / secondary special NAME_EDUCATION_TYPE have a TARGET value of 0 or in other words are less likely to have payment difficulties.
+
+
+```{r}
+# Boxplot between FLOORSMAX_AVG and TARGET
+
+subset_data %>% 
+  ggplot(mapping = aes(x = TARGET, y = FLOORSMAX_AVG)) +
+  geom_boxplot() +
+  labs(title = "Boxplot between FLOORSMAX_AVG and TARGET")
+
+```
+
+
+The boxplot shows a weak relationship between FLOORSMAX_AVG and TARGET due to the high number of outliers seen in TARGET 0 i.e. if the FLOORSMAX_AVG is high, it is more likely that the TARGET has a value of 0 i.e. more floors area means less payment difficulties for client but the relationship seen above is too weak to be seen as conclusive.
+
+
+```{r}
+# Scatter plot of DAYS_BIRTH vs DAYS_ID_PUBLISH by TARGET
+
+subset_data %>% 
+  ggplot(mapping = aes(x = DAYS_BIRTH, y = DAYS_ID_PUBLISH, color = TARGET)) +
+  geom_point() +
+  labs(title = "Scatter plot of DAYS_BIRTH vs DAYS_ID_PUBLISH by TARGET")
+
+```
+
+
+The above scatter plot shows the relationship between DAYS_ID_PUBLISH and DAYS_BIRTH by TARGET variable. These two were selected together as most people get there ID when they turn 18 and hence it correlates with age. There seems to be not much of a relationship on how TARGET variable is changed by moving through the axes although it can be seen that TARGET is dense on the second graph area at the top suggesting that when both the variables are close to zero or in a sense that when a client is young and close to 18, they are more likely to have payment difficulties. 
+
+
+```{r}
+# Scatter plot of DAYS_EMPLOYED vs AMT_INCOME_TOTAL by TARGET
+
+subset_data %>% 
+  ggplot(mapping = aes(x = DAYS_EMPLOYED, y = AMT_INCOME_TOTAL, color = TARGET)) +
+  geom_point() +
+  labs(title = "Scatter plot of DAYS_EMPLOYED vs AMT_INCOME_TOTAL by TARGET")
+```
+
+
+The above scatterplot shows a random distribution between AMT_INCOME_TOTAL and DAYS_EMPLOYED by TARGET. These variables were selected since mostly one tends to increase their income as more time passes in their employment. Given the distribution of TARGET variable it can be seen that there is a random relationship between a client's income and their tendency to have payment difficulties which is surprising when compared with other real life examples as usually people with high income don't have payment difficulties.
+
+
+```{r}
+
+# Bar Chart between CODE_GENDER & NAME_FAMILY_STATUS by TARGET
+
+subset_data %>%
+  ggplot(mapping = aes(x = NAME_FAMILY_STATUS, fill = TARGET)) +
+  geom_bar(position = "dodge") +
+  facet_wrap(~ CODE_GENDER) +
+  labs(title = "Distribution of CODE_GENDER & NAME_FAMILY_STATUS by TARGET",
+       x = "NAME_FAMILY_STATUS",
+       y = "Count",
+       fill = "TARGET") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+        axis.text.y = element_text(angle = 0))
+
+```
+
+
+From the grouped bar chart above it can be deduced that more percentage of Male have payment difficulties i.e. have a TARGET value of 1 than Females with the ratio of Married Male being most likely to have payment difficulties among them but still further analysis is required for conclusive results.
+
+
+```{r}
+
+# Bar Chart between FLAG_OWN_CAR & FLAG_WORK_PHONE by TARGET
+
+subset_data %>%
+  ggplot(mapping = aes(x = FLAG_OWN_CAR, fill = TARGET)) +
+  geom_bar(position = "dodge") +
+  facet_wrap(~ FLAG_WORK_PHONE) +
+  labs(title = "Distribution of FLAG_OWN_CAR & FLAG_WORK_PHONE by TARGET",
+       x = "FLAG_OWN_CAR",
+       y = "Count",
+       fill = "TARGET")
+
+```
+
+
+From the above grouped chart there seems to be a weak relationship between not owning a car and having payment difficulties (i.e. TARGET = 1), while there seems to be no concrete relationship between providing a work phone number and the target variable.
+
+
+```{r}
+
+# Heatmap between ORGANIZATION_TYPE and TARGET
+
+subset_data %>%
+  count(ORGANIZATION_TYPE, TARGET) %>%
+  ggplot(mapping = aes(x = ORGANIZATION_TYPE, y = TARGET)) +
+  geom_tile(mapping = aes(fill = n)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+        axis.text.y = element_text(angle = 0)) +
+  labs(title = "Heatmap between ORGANIZATION_TYPE and TARGET")
+
+```
+
+
+From the above heatmap it can be seen that clients in organizations:
+1. Business Entity Type 3,
+2. XNA, and 
+3. Self-employed
+are least likely to have payment difficulties.
+
+
+```{r}
+
+# Heatmap between OCCUPATION_TYPE and TARGET
+
+subset_data %>%
+  count(OCCUPATION_TYPE, TARGET) %>%
+  ggplot(mapping = aes(x = OCCUPATION_TYPE, y = TARGET)) +
+  geom_tile(mapping = aes(fill = n)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        axis.text.y = element_text(angle = 0)) +
+  labs(title = "Heatmap between OCCUPATION_TYPE and TARGET")
+
+```
+
+
+It can be seen from the above Heatmap that clients with occupations: Laborers, Managers, Sales staff and not listed are the ones that will have the least payment difficulties and hence least risk of default.
+
+
+## Results, Findings and Conclusion
+
+The initial analysis revealed several important predictors for assessing loan repayment capabilities within Home Credit dataset. Correlation analysis and multiple linear regression has identified some key variables such as EXT_SOURCE_3, EXT_SOURCE_2, and demographic factors like gender and education level as significant predictors.
+
+Missing data were addressed through imputation and removal, ensuring data integrity for subsequent analysis. Exploratory data visualizations further explains the relationship between predictors and the target variable although most results show a weak relationship but upon the addition of more evidence we should be able to come to a deductive result. Although it did uncover patterns such as the impact of employment history and occupational type on loan repayment.
+
+These findings have implications for predictive modeling and risk assessment strategies, suggesting the importance of incorporating both financial and socio-demographic factors in credit evaluation. Ultimately, this analysis provides valuable insights for Home Credit's decision-making processes, potentially leading to improved loan approval rates and reduced default risks.

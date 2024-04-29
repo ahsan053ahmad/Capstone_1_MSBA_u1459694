@@ -1,0 +1,259 @@
+---
+title: "Kaggle_Submission_Modeling"
+author: "Ahsan Ahmad"
+date: "2024-03-30"
+output: html_document
+---
+
+```{r}
+
+# Load Data and packages
+library(tidyverse) #load libraries for project
+library(dplyr) 
+library(ggplot2)
+library(tidyr)
+library(rpart)
+library(rpart.plot)
+library(skimr)
+library(janitor)
+library(corrplot)
+library(psych)
+library(caret)
+library(rminer)
+library(rmarkdown)
+library(matrixStats)
+library(knitr)
+library(rpart)
+library(RWeka)
+library(gbm)
+library(DMwR2)
+library(smotefamily)
+library(performanceEstimation)
+library(e1071)
+library(scatterplot3d)
+library(C50)
+library(tictoc)
+library(rsample)      
+library(ggthemes)
+library(scales)
+library(wesanderson)
+library(Metrics)
+library(here)
+library(pROC)
+library(xgboost)
+library(caTools)
+
+train_data <- read.csv("application_train.csv", stringsAsFactors = TRUE)
+test_data <- read.csv("application_test.csv", stringsAsFactors = TRUE)
+
+train_data <- train_data %>%
+  mutate(
+         REGION_RATING_CLIENT = factor(REGION_RATING_CLIENT),
+         REGION_RATING_CLIENT_W_CITY = factor(REGION_RATING_CLIENT_W_CITY),
+         FLAG_OWN_CAR = factor(FLAG_OWN_CAR),
+         FLAG_OWN_REALTY = factor(FLAG_OWN_REALTY),
+         FLAG_MOBIL = factor(FLAG_MOBIL),
+         FLAG_EMP_PHONE = factor(FLAG_EMP_PHONE),
+         FLAG_WORK_PHONE = factor(FLAG_WORK_PHONE),
+         FLAG_CONT_MOBILE = factor(FLAG_CONT_MOBILE),
+         FLAG_PHONE = factor(FLAG_PHONE),
+         FLAG_EMAIL = factor(FLAG_EMAIL),
+         FLAG_DOCUMENT_2 = factor(FLAG_DOCUMENT_2),
+         FLAG_DOCUMENT_3 = factor(FLAG_DOCUMENT_3),
+         FLAG_DOCUMENT_4 = factor(FLAG_DOCUMENT_4),
+         FLAG_DOCUMENT_5 = factor(FLAG_DOCUMENT_5),
+         FLAG_DOCUMENT_6 = factor(FLAG_DOCUMENT_6),
+         FLAG_DOCUMENT_7 = factor(FLAG_DOCUMENT_7),
+         FLAG_DOCUMENT_8 = factor(FLAG_DOCUMENT_8),
+         FLAG_DOCUMENT_9 = factor(FLAG_DOCUMENT_9),
+         FLAG_DOCUMENT_10 = factor(FLAG_DOCUMENT_10),
+         FLAG_DOCUMENT_11 = factor(FLAG_DOCUMENT_11),
+         FLAG_DOCUMENT_12 = factor(FLAG_DOCUMENT_12),
+         FLAG_DOCUMENT_13 = factor(FLAG_DOCUMENT_13),
+         FLAG_DOCUMENT_14 = factor(FLAG_DOCUMENT_14),
+         FLAG_DOCUMENT_15 = factor(FLAG_DOCUMENT_15),
+         FLAG_DOCUMENT_16 = factor(FLAG_DOCUMENT_16),
+         FLAG_DOCUMENT_17 = factor(FLAG_DOCUMENT_17),
+         FLAG_DOCUMENT_18 = factor(FLAG_DOCUMENT_18),
+         FLAG_DOCUMENT_19 = factor(FLAG_DOCUMENT_19),
+         FLAG_DOCUMENT_20 = factor(FLAG_DOCUMENT_20),
+         FLAG_DOCUMENT_21 = factor(FLAG_DOCUMENT_21),
+         REG_REGION_NOT_LIVE_REGION = factor(REG_REGION_NOT_LIVE_REGION),
+         REG_REGION_NOT_WORK_REGION = factor(REG_REGION_NOT_WORK_REGION),
+         LIVE_REGION_NOT_WORK_REGION = factor(LIVE_REGION_NOT_WORK_REGION),
+         REG_CITY_NOT_LIVE_CITY = factor(REG_CITY_NOT_LIVE_CITY),
+         REG_CITY_NOT_WORK_CITY = factor(REG_CITY_NOT_WORK_CITY),
+         LIVE_CITY_NOT_WORK_CITY = factor(LIVE_CITY_NOT_WORK_CITY)
+         ) 
+
+test_data <- test_data %>%
+  mutate(
+         REGION_RATING_CLIENT = factor(REGION_RATING_CLIENT),
+         REGION_RATING_CLIENT_W_CITY = factor(REGION_RATING_CLIENT_W_CITY),
+         FLAG_OWN_CAR = factor(FLAG_OWN_CAR),
+         FLAG_OWN_REALTY = factor(FLAG_OWN_REALTY),
+         FLAG_MOBIL = factor(FLAG_MOBIL),
+         FLAG_EMP_PHONE = factor(FLAG_EMP_PHONE),
+         FLAG_WORK_PHONE = factor(FLAG_WORK_PHONE),
+         FLAG_CONT_MOBILE = factor(FLAG_CONT_MOBILE),
+         FLAG_PHONE = factor(FLAG_PHONE),
+         FLAG_EMAIL = factor(FLAG_EMAIL),
+         FLAG_DOCUMENT_2 = factor(FLAG_DOCUMENT_2),
+         FLAG_DOCUMENT_3 = factor(FLAG_DOCUMENT_3),
+         FLAG_DOCUMENT_4 = factor(FLAG_DOCUMENT_4),
+         FLAG_DOCUMENT_5 = factor(FLAG_DOCUMENT_5),
+         FLAG_DOCUMENT_6 = factor(FLAG_DOCUMENT_6),
+         FLAG_DOCUMENT_7 = factor(FLAG_DOCUMENT_7),
+         FLAG_DOCUMENT_8 = factor(FLAG_DOCUMENT_8),
+         FLAG_DOCUMENT_9 = factor(FLAG_DOCUMENT_9),
+         FLAG_DOCUMENT_10 = factor(FLAG_DOCUMENT_10),
+         FLAG_DOCUMENT_11 = factor(FLAG_DOCUMENT_11),
+         FLAG_DOCUMENT_12 = factor(FLAG_DOCUMENT_12),
+         FLAG_DOCUMENT_13 = factor(FLAG_DOCUMENT_13),
+         FLAG_DOCUMENT_14 = factor(FLAG_DOCUMENT_14),
+         FLAG_DOCUMENT_15 = factor(FLAG_DOCUMENT_15),
+         FLAG_DOCUMENT_16 = factor(FLAG_DOCUMENT_16),
+         FLAG_DOCUMENT_17 = factor(FLAG_DOCUMENT_17),
+         FLAG_DOCUMENT_18 = factor(FLAG_DOCUMENT_18),
+         FLAG_DOCUMENT_19 = factor(FLAG_DOCUMENT_19),
+         FLAG_DOCUMENT_20 = factor(FLAG_DOCUMENT_20),
+         FLAG_DOCUMENT_21 = factor(FLAG_DOCUMENT_21),
+         REG_REGION_NOT_LIVE_REGION = factor(REG_REGION_NOT_LIVE_REGION),
+         REG_REGION_NOT_WORK_REGION = factor(REG_REGION_NOT_WORK_REGION),
+         LIVE_REGION_NOT_WORK_REGION = factor(LIVE_REGION_NOT_WORK_REGION),
+         REG_CITY_NOT_LIVE_CITY = factor(REG_CITY_NOT_LIVE_CITY),
+         REG_CITY_NOT_WORK_CITY = factor(REG_CITY_NOT_WORK_CITY),
+         LIVE_CITY_NOT_WORK_CITY = factor(LIVE_CITY_NOT_WORK_CITY)
+         ) 
+
+```
+
+## Data Cleaning
+
+```{r}
+
+# Replace NA values with column means for train_data
+for (col in names(train_data)) {
+  col_mean <- mean(train_data[[col]], na.rm = TRUE)
+  train_data[[col]][is.na(train_data[[col]])] <- col_mean
+}
+
+# Replace NA values with column means for test_data
+for (col in names(test_data)) {
+  col_mean <- mean(test_data[[col]], na.rm = TRUE)
+  test_data[[col]][is.na(test_data[[col]])] <- col_mean
+}
+
+any(is.na(train_data))
+any(is.na(test_data))
+
+# Selecting only numeric predictors for both sets
+
+train_set <- train_data %>% 
+  select_if(is.numeric)
+
+test_set <- test_data %>% 
+  select_if(is.numeric)
+
+# Turning TARGET to factor and removing SK_ID_CURR
+
+train_set <- train_set %>%
+  mutate(TARGET = factor(TARGET)) %>% 
+  select(-SK_ID_CURR)
+
+test_set <- test_set %>% 
+  select(-SK_ID_CURR)
+
+# Apply SMOTE to balance the classes
+balanced_data_clean <- smote(TARGET ~ ., train_set, perc.over = 100, k = 5)
+
+#Subsetting dataset: balanced_data_clean
+
+# Calculate proportions of each class in the target variable
+class_proportions <- balanced_data_clean %>% 
+  group_by(TARGET) %>%
+  summarise(count = n()) %>%
+  mutate(proportion = count / sum(count))
+
+# Determine the number of observations to include for each class in the subset
+subset_size <- 7472325  # Adjust this value based on your requirements
+subset_counts <- round(class_proportions$proportion * subset_size)
+
+# Create a subset for each class
+subset_dfs <- lapply(1:nrow(class_proportions), function(i) {
+  filter(balanced_data_clean, TARGET == class_proportions$TARGET[i]) %>%
+    sample_n(subset_counts[i])
+})
+
+# Combine the subsets into a single dataset
+subset_df <- do.call(rbind, subset_dfs)
+
+summary(subset_df)
+
+train_labels <- subset_df$TARGET
+
+subset_df <- balanced_data_clean
+
+```
+
+# Modeling
+
+
+```{r}
+
+# Prepare data for XGBoost
+
+##subset_df <- subset_df %>% 
+  ##select(-TARGET)
+
+##summary(train_labels)
+
+summary(subset_df)
+
+y_train <- as.integer(subset_df$TARGET) - 1
+
+subset_df <- subset_df %>% 
+  select(-TARGET)
+
+# Convert subset_df to numeric matrix
+subset_matrix <- as.matrix(subset_df)
+
+# Create xgb.DMatrix for training data
+xgb_train <- xgb.DMatrix(data = subset_matrix, label = y_train)
+xgb_test <- xgb.DMatrix(data = as.matrix(test_set))
+
+# Define XGBoost parameters
+xgb_params <- list(
+  booster = "gbtree",
+  eta = 0.1,
+  max_depth = 8,
+  gamma = 4,
+  subsample = 0.8,
+  colsample_bytree = 1,
+  eval_metric = "auc",
+  num_class = length(levels(balanced_data_clean$TARGET))
+)
+
+# Train the XGBoost model
+
+xgb_model <- xgb.train(
+  params = xgb_params,
+  data = xgb_train,
+  nrounds = 500,
+  verbose = 1
+)
+xgb_model
+
+# Generate predictions on the test set
+
+pred_final <- predict(xgb_model, xgb_test)
+
+read_csv("sample_submission.csv") %>%  
+  mutate(SK_ID_CURR = as.integer(SK_ID_CURR),
+         TARGET = pred_final) %>%
+  write_csv("submission_5.csv")
+
+```
+
+
+
